@@ -1,76 +1,53 @@
-import uuid
 import sqlite3
+import uuid
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, BotCommand
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 
 TOKEN = '6795856308:AAHfeQj1vsUGO0AdfW-hRRzCKVAlIe5rN7A'
 
-ALLOWED_USERS = ['fuddnexst', 'keepohuy', 'levsha707']
+# Connect to SQLite database
+conn = sqlite3.connect('telegram_bot.db')
+cursor = conn.cursor()
 
-def init_db():
-    conn = sqlite3.connect('telegram_bot.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            link_id TEXT UNIQUE
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            message_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            message_text TEXT,
-            sender_username TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(user_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# Create tables if not exists
+cursor.execute('''CREATE TABLE IF NOT EXISTS links (
+                    link_id TEXT PRIMARY KEY,
+                    user_id INTEGER
+                )''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS messages (
+                    message_id INTEGER PRIMARY KEY,
+                    ref_user_id INTEGER,
+                    message_text TEXT
+                )''')
+
+conn.commit()
+
+ALLOWED_USERS = ['fuddnexst', 'keepohuy', 'levsha707']
 
 def start(update: Update, context: CallbackContext):
     user_id = update.message.from_user.id
-    conn = sqlite3.connect('telegram_bot.db')
-    c = conn.cursor()
-    c.execute('SELECT link_id FROM users WHERE user_id = ?', (user_id,))
-    row = c.fetchone()
-    if row:
-        link_id = row[0]
-    else:
+    link_id = context.user_data.get('link_id')
+    if not link_id:
         link_id = str(uuid.uuid4())
-        c.execute('INSERT INTO users (user_id, link_id) VALUES (?, ?)', (user_id, link_id))
+        cursor.execute("INSERT INTO links (link_id, user_id) VALUES (?, ?)", (link_id, user_id))
+        context.user_data['link_id'] = link_id
         conn.commit()
-    conn.close()
-
-    unique_link = f"t.me/{context.bot.username}?start={user_id}"
-    update.message.reply_text(
-        f"✉️ <i>получай анонимные сообщения прямо сейчас!</i>\n\n"
-        f"<i>твоя личная ссылка:</i>\n\n"
-        f"👉 <code>{unique_link}</code>\n\n"
-        f"<i>нажми на ссылку, чтобы скопировать</i>",
-        parse_mode=ParseMode.HTML
-    )
+    unique_link = f"<code>t.me/{context.bot.username}?start={link_id}</code>"
+    update.message.reply_text(f"✉️ <i>получай анонимные сообщения прямо сейчас!</i>\n\n<i>твоя личная ссылка:</i>\n\n👉{unique_link}\n\n<i>нажми на ссылку, чтобы скопировать</i>", parse_mode=ParseMode.HTML)
 
 def handle_message(update: Update, context: CallbackContext):
     ref_user_id = context.user_data.get('ref_user_id')
     if ref_user_id:
         message = update.message.text
-        ref_username = update.message.from_user.username
-        conn = sqlite3.connect('telegram_bot.db')
-        c = conn.cursor()
-        c.execute('INSERT INTO messages (user_id, message_text, sender_username) VALUES (?, ?, ?)', (ref_user_id, message, ref_username))
+        ref_user_id = update.message.from_user.id
+        cursor.execute("INSERT INTO messages (ref_user_id, message_text) VALUES (?, ?)", (ref_user_id, message))
         conn.commit()
-        conn.close()
 
-        keyboard = [[InlineKeyboardButton("узнать отправителя 🔓", callback_data=str(c.lastrowid))]]
+        keyboard = [[InlineKeyboardButton("узнать отправителя 🔓", callback_data=str(cursor.lastrowid))]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        context.bot.send_message(
-            chat_id=ref_user_id,
-            text=f"<b><i>получено новое сообщение</i></b>\n\n<code>{message}</code>",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
+        context.bot.send_message(chat_id=ref_user_id, text=f"<b><i>получено новое сообщение</i></b>\n\n<code>{message}</code>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
         keyboard_reply = [[InlineKeyboardButton("отправить еще", callback_data='send_another')]]
         reply_markup_reply = InlineKeyboardMarkup(keyboard_reply)
@@ -87,58 +64,84 @@ def button(update: Update, context: CallbackContext):
         query.edit_message_text(text="🚀 <i>отправь еще одно сообщение!</i>", parse_mode=ParseMode.HTML)
         return
 
+    if query.data == 'cancel':
+        query.answer()
+        user_id = query.from_user.id
+        link_id = str(uuid.uuid4())
+        cursor.execute("INSERT INTO links (link_id, user_id) VALUES (?, ?)", (link_id, user_id))
+        context.user_data['link_id'] = link_id
+        conn.commit()
+        unique_link = f"<code>t.me/{context.bot.username}?start={link_id}</code>"
+        query.edit_message_text(f"<i>твоя личная ссылка:</i>\n\n👉 {unique_link}\n\n<i>нажми на ссылку, чтобы скопировать</i>", parse_mode=ParseMode.HTML)
+        return
+
     if user.username in ALLOWED_USERS:
         message_id = int(query.data.split('_')[1]) if 'hide_' in query.data else int(query.data)
-        conn = sqlite3.connect('telegram_bot.db')
-        c = conn.cursor()
-        c.execute('SELECT message_text, sender_username FROM messages WHERE message_id = ?', (message_id,))
-        row = c.fetchone()
-        conn.close()
-        
-        if row:
-            message_text, sender_username = row
-            if 'hide_' in query.data:
-                query.answer()
-                query.edit_message_text(
-                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("узнать отправителя 🔓", callback_data=str(message_id))]])
-                )
-            else:
-                query.answer()
-                query.edit_message_text(
-                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>\n\nотправитель: @{sender_username}",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("скрыть отправителя 🔒", callback_data=f'hide_{message_id}')]])
-                )
+        ref_user_id = query.from_user.id
+
+        if 'hide_' in query.data:
+            query.answer()
+            original_message = query.message.text_html.split('\n\n', 1)[1].split('\n\n')[0]
+            query.edit_message_text(
+                text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{original_message}</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("узнать отправителя 🔓", callback_data=str(message_id))]])
+            )
         else:
-            query.answer(text="❌ информация об отправителе недоступна ❌", show_alert=True)
+            query.answer()
+            original_message = query.message.text_html.split('\n\n', 1)[1]
+            query.edit_message_text(
+                text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{original_message}</code>",
+                parse_mode=ParseMode.HTML
+            )
+            cursor.execute("SELECT ref_user_id FROM messages WHERE message_id=?", (message_id,))
+            ref_user_id = cursor.fetchone()[0]
+            query.message.reply_text(f"<code>Отправитель: {ref_user_id}</code>", parse_mode=ParseMode.HTML)
+
     else:
         query.answer(text="❌ у вас нет прав на просмотр отправителя ❌", show_alert=True)
+
+def get_unique_link(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    link_id = context.user_data.get('link_id')
+    if not link_id:
+        link_id = str(uuid.uuid4())
+        cursor.execute("INSERT INTO links (link_id, user_id) VALUES (?, ?)", (link_id, user_id))
+        context.user_data['link_id'] = link_id
+        conn.commit()
+    unique_link = f"<code>t.me/{context.bot.username}?start={link_id}</code>"
+    update.message.reply_text(f"<i>твоя личная ссылка:</i>\n\n👉{unique_link}\n\n<i>нажми на ссылку, чтобы скопировать</i>", parse_mode=ParseMode.HTML)
 
 def handle_start_link(update: Update, context: CallbackContext):
     args = context.args
     if args:
-        ref_user_id = int(args[0])
-        context.user_data['ref_user_id'] = ref_user_id
-        keyboard = [[InlineKeyboardButton("отменить отправку", callback_data='cancel')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        update.message.reply_text("✏ <i>ты можешь отправить сообщение человеку, который опубликовал эту ссылку</i>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        link_id = args[0]
+        cursor.execute("SELECT user_id FROM links WHERE link_id=?", (link_id,))
+        ref_user_id = cursor.fetchone()
+        if ref_user_id:
+            context.user_data['ref_user_id'] = ref_user_id[0]
+            keyboard = [[InlineKeyboardButton("отменить отправку", callback_data='cancel')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            update.message.reply_text("✏ <i>ты можешь отправить сообщение человеку, который опубликовал эту ссылку</i>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        else:
+            update.message.reply_text("🙊 ссылка недействительна или устарела 🙊")
     else:
         start(update, context)
 
 def main():
-    init_db()
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
     updater.bot.set_my_commands([
-        BotCommand("start", "🔗 get link")
+        BotCommand("start", "🔗 get link"),
+        BotCommand("changelink", "✏ change link")
     ])
 
     dp.add_handler(CommandHandler("start", handle_start_link))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
     dp.add_handler(CallbackQueryHandler(button))
+    dp.add_handler(CommandHandler("getlink", get_unique_link))
+    dp.add_handler(CommandHandler("changelink", change_link))
 
     updater.start_polling()
     updater.idle()
