@@ -74,7 +74,7 @@ def button(update: Update, context: CallbackContext):
             query.answer()
             original_message = query.message.text_html.split('\n\n', 1)[1]
             query.edit_message_text(
-                text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{original_message}</code>\n\n<code><i>отправитель:</i> @{ref_username}</code>",
+                text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{original_message}</code>\n\nотправитель: @{ref_username}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("скрыть отправителя 🔒", callback_data=f'hide_{message_id}')]])
             )
