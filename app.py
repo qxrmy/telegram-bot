@@ -118,7 +118,7 @@ def button(update: Update, context: CallbackContext):
             else:
                 query.answer()
                 query.edit_message_text(
-                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>\n\nотправитель: @{sender_username} (<a href=\"{sender_link}\">tg://user?id={sender_user_id}</a>)",
+                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>\n\nотправитель: @{sender_username} - <a href=\"{sender_link}\">tg://user?id={sender_user_id}</a>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("скрыть отправителя 🔓", callback_data=f'hide_{message_id}')]])
                 )
