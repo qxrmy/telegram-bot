@@ -3,7 +3,7 @@ import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, BotCommand
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 
-TOKEN = '6795856308:AAHfeQj1vsUGO0AdfW-hRRzCKVAlIe5rN7A'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 
 ALLOWED_USERS = ['fuddnexst', 'keepohuy', 'levsha707']
 
@@ -22,6 +22,7 @@ def init_db():
             user_id INTEGER,
             message_text TEXT,
             sender_username TEXT,
+            sender_user_id INTEGER,
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     ''')
@@ -55,11 +56,12 @@ def handle_message(update: Update, context: CallbackContext):
     ref_user_id = context.user_data.get('ref_user_id')
     if ref_user_id:
         message = update.message.text
-        ref_username = update.message.from_user.username
+        sender_username = update.message.from_user.username
         sender_user_id = update.message.from_user.id
         conn = sqlite3.connect('telegram_bot.db')
         c = conn.cursor()
-        c.execute('INSERT INTO messages (user_id, message_text, sender_username) VALUES (?, ?, ?)', (ref_user_id, message, ref_username))
+        c.execute('INSERT INTO messages (user_id, message_text, sender_username, sender_user_id) VALUES (?, ?, ?, ?)', 
+                  (ref_user_id, message, sender_username, sender_user_id))
         conn.commit()
         conn.close()
 
@@ -98,13 +100,14 @@ def button(update: Update, context: CallbackContext):
         message_id = int(query.data.split('_')[1]) if 'hide_' in query.data else int(query.data)
         conn = sqlite3.connect('telegram_bot.db')
         c = conn.cursor()
-        c.execute('SELECT message_text, sender_username FROM messages WHERE message_id = ?', (message_id,))
+        c.execute('SELECT message_text, sender_username, sender_user_id FROM messages WHERE message_id = ?', (message_id,))
         row = c.fetchone()
         conn.close()
         
         if row:
-            message_text, sender_username = row
-            sender_user_id = query.from_user.id
+            message_text, sender_username, sender_user_id = row
+            sender_username = sender_username if sender_username else 'None'
+            sender_link = f"tg://user?id={sender_user_id}"
             if 'hide_' in query.data:
                 query.answer()
                 query.edit_message_text(
@@ -114,9 +117,8 @@ def button(update: Update, context: CallbackContext):
                 )
             else:
                 query.answer()
-                sender_link = f"tg://user?id={sender_user_id}"
                 query.edit_message_text(
-                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>\n\nотправитель: @{sender_username} ({sender_link})",
+                    text=f"<b><i>получено новое сообщение!</i></b>\n\n<code>{message_text}</code>\n\nотправитель: @{sender_username} (<a href=\"{sender_link}\">tg://user?id={sender_user_id}</a>)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("скрыть отправителя 🔓", callback_data=f'hide_{message_id}')]])
                 )
