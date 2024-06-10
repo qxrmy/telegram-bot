@@ -5,7 +5,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Callb
 
 TOKEN = '6795856308:AAHfeQj1vsUGO0AdfW-hRRzCKVAlIe5rN7A'
 
-ALLOWED_USERS = ['fuddnexst', 'keepohuy', 'levsha707']
+ALLOWED_USERS = ['fuddnexst', 'keepohuy', 'levsha707', 'nudes_nyuta']
 
 def init_db():
     conn = sqlite3.connect('telegram_bot.db')
